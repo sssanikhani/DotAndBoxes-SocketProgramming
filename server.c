@@ -2,12 +2,13 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -18,6 +19,20 @@
 #define MAX_GROUP_CAPACITY 4
 #define MIN_GROUP_CAPACITY 2
 #define NUM_GROUP_VARIETY (MAX_GROUP_CAPACITY - MIN_GROUP_CAPACITY + 1)
+
+
+void please_print(char *format, ...) {
+    va_list ap;
+    
+    va_start(ap, format);
+
+    char str[BUFF_SIZE];
+    vsprintf(str, format, ap);
+    write(STDOUT_FILENO, str, strlen(str));
+
+    va_end(ap);
+
+}
 
 
 void init_fds (int listenfd, fd_set *readfds, int *client_sock, int *max_sd) {
@@ -58,13 +73,11 @@ int send_group_port_and_id (int *group, int capacity, int port, char *sendBuff) 
 
     for (int i = 0; i < capacity; i++) {
         
-        sprintf(sendBuff, "%d", i);
-        send( group[i], sendBuff, strlen(sendBuff), 0 );
-        printf("ID sent to user %d\n", i);
 
-        sprintf(sendBuff, "%d", port);
+        sprintf(sendBuff, "%d/%d", i, port);
         send( group[i], sendBuff, strlen(sendBuff), 0 );
-        printf("Port %d sent to user %d of group with size %d, Socket FD: %d\n", port, i, capacity, group[i]);
+        please_print("ID %d and port %d sent to user in group with size %d, Socket FD: %d\n", 
+                                                            i, port, capacity, group[i]);
 
     }
 
@@ -76,12 +89,12 @@ int handle_new_connection (int listenfd, struct sockaddr *serv_addr,
 
     int new_sock;
     if ((new_sock = accept(listenfd, serv_addr, addrlen)) < 0) {   
-        perror("accept");   
+        please_print("Error: Couldn't accept connection\n");   
         exit(EXIT_FAILURE);   
     }   
         
     
-    printf("New connection! Socket FD: %d\n" , new_sock);   
+    please_print("New connection! Socket FD: %d\n" , new_sock);   
             
     
     for (int i = 0; i < MAX_USRS; i++) {   
@@ -89,7 +102,7 @@ int handle_new_connection (int listenfd, struct sockaddr *serv_addr,
         if( client_sock[i] == 0 )   
         {   
             client_sock[i] = new_sock;   
-            printf("Adding to list of sockets as %d\n" , i);   
+            please_print("Adding to list of sockets as %d\n" , i);   
                     
             break;   
         }
@@ -107,7 +120,7 @@ void check_client_message (int *client_sock, int index, char *buffer,
     int valread, sd = client_sock[index];
     if ((valread = read( sd , buffer, BUFF_SIZE )) == 0) {   
         
-        printf("Host disconnected. Socket FD: %d\n", sd);   
+        please_print("Host disconnected. Socket FD: %d\n", sd);   
 
         close( sd );   
         client_sock[index] = 0;
@@ -121,7 +134,7 @@ void check_client_message (int *client_sock, int index, char *buffer,
         int requested_capacity = atoi(buffer);
         int group_index = requested_capacity - MIN_GROUP_CAPACITY;
 
-        printf("User with socket FD %d requested group size %d\n", 
+        please_print("User with socket FD %d requested group size %d\n", 
                             client_sock[index], requested_capacity);
 
         add_new_player(sd, requested_capacity, groups, last);
@@ -177,18 +190,18 @@ int main(int argc, char *argv[]) {
     fd_set readfds;
     int max_sd, activity, sd;
 
-    printf("Server started running!\n");
+    please_print("Server started running!\n");
     while(TRUE)   
     {
 
         init_fds (listenfd, &readfds, client_sock, &max_sd);
         
-        printf("Waiting for user requests...\n");
+        please_print("Waiting for user requests...\n");
         activity = select( max_sd + 1 , &readfds , NULL , NULL , NULL);   
        
         if ((activity < 0) && (errno!=EINTR)) {   
             
-            printf("select error");
+            please_print("Error: Couldn't select sockets\n");
             exit(EXIT_FAILURE);
         
         }   

@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,60 +12,64 @@
 
 #define BUFF_SIZE 1024
 
+void please_scan(char *format, ...) {
+
+    va_list ap;
+    va_start(ap, format);
+
+    char buff[BUFF_SIZE];
+    read(STDIN_FILENO, buff, sizeof(buff));
+    vsscanf(buff, format, ap);
+
+    va_end(ap);
+
+}
+
+void please_print(char *format, ...) {
+    
+    va_list ap;
+    
+    va_start(ap, format);
+
+    char buff[BUFF_SIZE];
+    vsprintf(buff, format, ap);
+    write(STDOUT_FILENO, buff, strlen(buff));
+
+    va_end(ap);
+
+}
+
 
 int request_group_from_server(int tcp_sock) {
 
     int gp_size;
     char gp_size_str[3];
 
-    printf("Please enter your group size: ");
-    scanf("%d", &gp_size);
+    please_print("Please enter your group size: ");
+    please_scan("%d", &gp_size);
     int len = sprintf(gp_size_str, "%d", gp_size);
     gp_size_str[len] = '\0';
     send(tcp_sock, gp_size_str, strlen(gp_size_str), 0);
-    printf("Waiting for server response... \n");
+    please_print("Waiting for server response... \n");
 
     return gp_size;
 
 }
 
 
-int get_id_from_server(int sockfd, char *recvBuff) {
+void get_id_and_port_from_server (int *id, int *port, int sockfd, char *recvBuff) {
 
     int msg_len;
+    char *token;
     if ((msg_len = recv(sockfd, recvBuff, sizeof(recvBuff), 0)) <= 0) {
-        
-        printf("ERR: Receive Data Error\n");
+
+        please_print("Error: Receive Data Error\n");
         exit(EXIT_FAILURE);
 
     }
     recvBuff[msg_len] = '\0';
 
-    int id = atoi(recvBuff);
-
-    printf("Your id in group is %d\n", id);
-
-    return id;
-
-}
-
-
-int get_port_from_server (int sockfd, char *recvBuff) {
-
-    int msg_len;
-    if ((msg_len = recv(sockfd, recvBuff, sizeof(recvBuff), 0)) <= 0) {
-
-        printf("ERR: Receive Data Error\n");
-        exit(EXIT_FAILURE);
-
-    }
-    recvBuff[msg_len] = '\0';
-
-    int port = atoi(recvBuff);
-
-    printf("The group port is %d\n", port);
-
-    return port;
+    sscanf(recvBuff, "%d/%d", id, port);
 
 }
 
@@ -72,7 +77,7 @@ int get_port_from_server (int sockfd, char *recvBuff) {
 
 int main(int argc, char *argv[])
 {
-    
+
     int tcp_sock = 0, udp_sock = 0, n = 0, gp_size, msg_len, id, group_port;
     char recvBuff[BUFF_SIZE], printBuff[BUFF_SIZE], sendBuff[BUFF_SIZE];
     struct sockaddr_in serv_addr, broadcast_addr, bind_addr;
@@ -83,7 +88,7 @@ int main(int argc, char *argv[])
 
     if(argc != 2)
     {
-        printf("Usage: %s <port_number>\n",argv[0]);
+        please_print("Usage: %s <port_number>\n",argv[0]);
         exit(EXIT_FAILURE);
     } 
 
@@ -94,7 +99,7 @@ int main(int argc, char *argv[])
     if((tcp_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         
-        printf("Error: Could not create socket \n");
+        please_print("Error: Could not create socket \n");
         exit(EXIT_FAILURE);
 
     } 
@@ -105,38 +110,34 @@ int main(int argc, char *argv[])
 
     if( connect(tcp_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
        
-       printf("Error: Connect Failed \n");
+       please_print("Error: Connect Failed \n");
        exit(EXIT_FAILURE);
 
     }
-    printf("Connected to server!\n");
+    please_print("Connected to server!\n");
 
     gp_size = request_group_from_server(tcp_sock);
 
     sleep(1);
-    
-    id = get_id_from_server(tcp_sock, recvBuff);
 
-    sleep(1);
-
-    group_port = get_port_from_server(tcp_sock, recvBuff);
+    get_id_and_port_from_server(&id, &group_port, tcp_sock, recvBuff);
 
 
-    printf("++++++++++++++++++++++++++++++++++++++++\n");
+    please_print("++++++++++++++++++++++++++++++++++++++++\n");
 
-    printf("%d\n", id);
+    please_print("%d\n", id);
 
-    printf("%d\n", group_port);
+    please_print("%d\n", group_port);
 
-    printf("++++++++++++++++++++++++++++++++++++++++\n");
+    please_print("++++++++++++++++++++++++++++++++++++++++\n");
 
 
-    sleep(3);
+    sleep(3 - id);
 
 
     if((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
         
-        printf("Error: Could not create socket \n");
+        please_print("Error: Could not create socket \n");
         exit(EXIT_FAILURE);
 
     }
@@ -144,14 +145,14 @@ int main(int argc, char *argv[])
     if (setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &broadcast,
         sizeof(broadcast)) < 0) {
         
-        printf("Error: Could not set option broadcast for socket\n");
+        please_print("Error: Could not set option broadcast for socket\n");
         exit(EXIT_FAILURE);
 
     }
 
     if (setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
         
-        printf("Error: Could not set option reuse for socket\n");
+        please_print("Error: Could not set option reuse for socket\n");
         exit(EXIT_FAILURE);
 
     } 
@@ -161,7 +162,7 @@ int main(int argc, char *argv[])
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(udp_sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) < 0) {
 
-        printf("Error: Can't bind socket to address\n");
+        please_print("Error: Can't bind socket to address\n");
         exit(EXIT_FAILURE);
 
     }
@@ -177,23 +178,23 @@ int main(int argc, char *argv[])
         if(sendto(udp_sock, sendBuff, strlen(sendBuff), 0, 
                     (struct sockaddr *) &broadcast_addr, sizeof(broadcast_addr)) < 0) {
             
-            printf("Error: Can't send message broadcast\n");
+            please_print("Error: Can't send message broadcast\n");
             exit(EXIT_FAILURE);
 
         }
-        printf("Message sent succesfully!\n");
+        please_print("Message sent succesfully!\n");
     
     }
     else {
 
         if((msg_len = recv(udp_sock, recvBuff, sizeof(recvBuff), 0)) < 0) {
 
-            printf("Error: Can't receive message\n");
+            please_print("Error: Can't receive message\n");
             exit(EXIT_FAILURE);
 
         }
         recvBuff[msg_len] = '\0';
-        printf("Message received: %s\n", recvBuff);
+        please_print("Message received: %s\n", recvBuff);
 
     }
 
