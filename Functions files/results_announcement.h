@@ -1,0 +1,1 @@
+void results_announcement(int a, int b);

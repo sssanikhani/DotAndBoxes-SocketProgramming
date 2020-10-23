@@ -1,0 +1,1 @@
+void map_fill(int horizontal_map[VALUE][VALUE-1], int vertical_map[VALUE-1][VALUE], int direction, int row, int column);

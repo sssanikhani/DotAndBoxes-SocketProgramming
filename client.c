@@ -1,16 +1,19 @@
-#include <sys/socket.h>
-#include <sys/types.h>
+#include <sys/socket.h> 
 #include <netinet/in.h>
-#include <netdb.h>
-#include <stdarg.h>
+#include <stdarg.h> 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
+#include <unistd.h> 
 #include <arpa/inet.h>
 
 #define BUFF_SIZE 1024
+
+#define RESET 0
+#define BLUE 1
+#define RED 2
+#define GREEN 3
+#define YELLOW 4
 
 void please_scan(char *format, ...) {
 
@@ -40,36 +43,192 @@ void please_print(char *format, ...) {
 }
 
 
-int request_group_from_server(int tcp_sock) {
+void set_color(int color) {
+
+    switch (color)
+    {
+    case RESET:
+        please_print("\033[0m");
+        break;
+
+    case BLUE:
+        please_print("\033[1;34m");
+        break;
+
+    case RED:
+        please_print("\033[1;31m");
+        break;
+
+    case GREEN:
+        please_print("\033[1;32m");
+        break;
+
+    case YELLOW:
+        please_print("\033[01;33m");
+        break;
+    
+    default:
+        please_print("\033[0m");
+        break;
+    }
+
+}
+
+
+int connect_to_server(struct sockaddr_in *serv_addr, int tcp_port) {
+
+    int tcp_sock;
+    if((tcp_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        
+        set_color(RED);
+        please_print("Error: Couldn't create socket \n");
+        return -1;
+
+    } 
+
+    serv_addr -> sin_family = AF_INET;
+    serv_addr -> sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr -> sin_port = htons(tcp_port); 
+
+    if( connect(tcp_sock, (struct sockaddr *) serv_addr, sizeof(*serv_addr)) < 0) {
+       
+       set_color(RED);
+       please_print("Error: Couldn't connect to server \n");
+       return -1;
+
+    }
+    set_color(GREEN);
+    please_print("Connected to server!\n");
+
+    return tcp_sock;
+
+}
+
+
+void print_id_and_group_port(int id, int group_port) {
+
+    set_color(GREEN);
+    please_print("++++++++++++++++++++++++++++++++++++++++\n");
+
+    set_color(RESET);
+    please_print("Your id in group is %d\n", id);
+
+    please_print("Your group port is %d\n", group_port);
+
+    set_color(GREEN);
+    please_print("++++++++++++++++++++++++++++++++++++++++\n");
+
+}
+
+
+int get_id_and_port_from_server (int sockfd, int *id, int *port) {
+
+    int msg_len;
+    char recvBuff[BUFF_SIZE];
+
+
+    if ((msg_len = recv(sockfd, recvBuff, sizeof(recvBuff), 0)) <= 0) {
+
+        set_color(RED);
+        please_print("Error: Receive Data Error\n");
+        return -1;
+
+    }
+    recvBuff[msg_len] = '\0';
+
+    sscanf(recvBuff, "%d/%d", id, port);
+
+    print_id_and_group_port(*id, *port);
+
+    return 0;
+
+}
+
+
+int request_group_from_server(int tcp_sock, int *id, int *group_port) {
 
     int gp_size;
     char gp_size_str[3];
 
+    set_color(RESET);
     please_print("Please enter your group size: ");
     please_scan("%d", &gp_size);
+
     int len = sprintf(gp_size_str, "%d", gp_size);
     gp_size_str[len] = '\0';
-    send(tcp_sock, gp_size_str, strlen(gp_size_str), 0);
+
+    if (send(tcp_sock, gp_size_str, strlen(gp_size_str), 0) < 0) {
+
+        set_color(RED);
+        printf("Err: Couldn't send data to server\n");
+        return -1;
+
+    }
+    
+    set_color(RESET);
     please_print("Waiting for server response... \n");
+
+    if (get_id_and_port_from_server( tcp_sock, id, group_port ) < 0) {
+
+        set_color(RED);
+        please_print("Err: Couldn't get id and port from server\n");
+        return -1;
+
+    }
 
     return gp_size;
 
 }
 
 
-void get_id_and_port_from_server (int *id, int *port, int sockfd, char *recvBuff) {
+int create_broadcast_socket(struct sockaddr_in *bind_addr, 
+                            struct sockaddr_in *broadcast_addr,
+                             int group_port, int *broadcast, int *reuse) {
 
-    int msg_len;
-    char *token;
-    if ((msg_len = recv(sockfd, recvBuff, sizeof(recvBuff), 0)) <= 0) {
+    int udp_sock;
 
-        please_print("Error: Receive Data Error\n");
-        exit(EXIT_FAILURE);
+    if((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
+        
+        set_color(RED);
+        please_print("Error: Couldn't create socket \n");
+        return -1;
 
     }
-    recvBuff[msg_len] = '\0';
+    
+    if (setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, broadcast,
+        sizeof(*broadcast)) < 0) {
+        
+        set_color(RED);
+        please_print("Error: Couldn't set option broadcast for socket\n");
+        return -1;
 
-    sscanf(recvBuff, "%d/%d", id, port);
+    }
+
+    if (setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, reuse, sizeof(*reuse)) < 0) {
+        
+        set_color(RED);
+        please_print("Error: Couldn't set option reuse for socket\n");
+        return -1;
+
+    } 
+
+    bind_addr -> sin_family = AF_INET;
+    bind_addr -> sin_port = htons(group_port);
+    bind_addr -> sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(udp_sock, (struct sockaddr *) bind_addr, sizeof(*bind_addr)) < 0) {
+
+        set_color(RED);
+        please_print("Error: Couldn't bind socket to address\n");
+        return -1;
+
+    }
+
+    broadcast_addr -> sin_family = AF_INET;
+    broadcast_addr -> sin_port = htons(group_port);
+    broadcast_addr -> sin_addr.s_addr = inet_addr("255.255.255.255");
+
+    return udp_sock;
 
 }
 
@@ -88,115 +247,78 @@ int main(int argc, char *argv[])
 
     if(argc != 2)
     {
+        set_color(YELLOW);
         please_print("Usage: %s <port_number>\n",argv[0]);
-        exit(EXIT_FAILURE);
+        return -1;
     } 
 
     memset(recvBuff, '0',sizeof(recvBuff));
     memset(&serv_addr, '0', sizeof(serv_addr));
     memset(&broadcast_addr, '0', sizeof(broadcast_addr));
 
-    if((tcp_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    {
-        
-        please_print("Error: Could not create socket \n");
-        exit(EXIT_FAILURE);
+    tcp_sock = connect_to_server(&serv_addr, tcp_port);
+    if (gp_size < 0) {
 
-    } 
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port = htons(tcp_port); 
-
-    if( connect(tcp_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-       
-       please_print("Error: Connect Failed \n");
-       exit(EXIT_FAILURE);
+        set_color(RED);
+        please_print("Err: Couldn't connect to server\n");
+        return -1;
 
     }
-    please_print("Connected to server!\n");
 
-    gp_size = request_group_from_server(tcp_sock);
+    gp_size = request_group_from_server(tcp_sock, &id, &group_port);
+    if (gp_size < 0) {
 
-    sleep(1);
+        set_color(RED);
+        please_print("Err: Couldn't get group information from server\n");
+        return -1;
 
-    get_id_and_port_from_server(&id, &group_port, tcp_sock, recvBuff);
+    }
 
+    sleep(gp_size - id - 1);
 
-    please_print("++++++++++++++++++++++++++++++++++++++++\n");
+    udp_sock = create_broadcast_socket(&bind_addr, &broadcast_addr, 
+                                        group_port, &broadcast, &reuse);
+    if (udp_sock < 0) {
 
-    please_print("%d\n", id);
-
-    please_print("%d\n", group_port);
-
-    please_print("++++++++++++++++++++++++++++++++++++++++\n");
-
-
-    sleep(3 - id);
-
-
-    if((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
-        
-        please_print("Error: Could not create socket \n");
-        exit(EXIT_FAILURE);
+        set_color(RED);
+        please_print("Err: Couldn't create UDP socket\n");
+        return -1;
 
     }
     
-    if (setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &broadcast,
-        sizeof(broadcast)) < 0) {
-        
-        please_print("Error: Could not set option broadcast for socket\n");
-        exit(EXIT_FAILURE);
 
-    }
+    start_game(gp_size + 1, id, udp_sock, &broadcast_addr);
 
-    if (setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        
-        please_print("Error: Could not set option reuse for socket\n");
-        exit(EXIT_FAILURE);
+    // if(id == 0) {
 
-    } 
-
-    bind_addr.sin_family = AF_INET;
-    bind_addr.sin_port = htons(group_port);
-    bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(udp_sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) < 0) {
-
-        please_print("Error: Can't bind socket to address\n");
-        exit(EXIT_FAILURE);
-
-    }
-
-    broadcast_addr.sin_family = AF_INET;
-    broadcast_addr.sin_port = htons(group_port);
-    broadcast_addr.sin_addr.s_addr = inet_addr("255.255.255.255");
-
-    if(id == 0) {
-
-        int len = sprintf(sendBuff, "Hi! I'm user id %d !\n", id);
-        sendBuff[len] = '\0';
-        if(sendto(udp_sock, sendBuff, strlen(sendBuff), 0, 
-                    (struct sockaddr *) &broadcast_addr, sizeof(broadcast_addr)) < 0) {
+    //     int len = sprintf(sendBuff, "Hi! I'm user id %d!", id);
+    //     sendBuff[len] = '\0';
+    //     if(sendto(udp_sock, sendBuff, strlen(sendBuff), 0, 
+    //                 (struct sockaddr *) &broadcast_addr, sizeof(broadcast_addr)) < 0) {
             
-            please_print("Error: Can't send message broadcast\n");
-            exit(EXIT_FAILURE);
+    //         set_color(RED);
+    //         please_print("Error: Couldn't send message broadcast\n");
+    //         return -1;
 
-        }
-        please_print("Message sent succesfully!\n");
+    //     }
+    //     set_color(GREEN);
+    //     please_print("Message sent succesfully!\n");
     
-    }
-    else {
+    // }
+    // else {
 
-        if((msg_len = recv(udp_sock, recvBuff, sizeof(recvBuff), 0)) < 0) {
+    //     if((msg_len = recv(udp_sock, recvBuff, sizeof(recvBuff), 0)) < 0) {
 
-            please_print("Error: Can't receive message\n");
-            exit(EXIT_FAILURE);
+    //         set_color(RED);
+    //         please_print("Error: Can't receive message\n");
+    //         return -1;
 
-        }
-        recvBuff[msg_len] = '\0';
-        please_print("Message received: %s\n", recvBuff);
+    //     }
+    //     recvBuff[msg_len] = '\0';
+    //     set_color(BLUE);
+    //     please_print("Message received: %s\n", recvBuff);
 
-    }
+    // }
 
     return 0;
 }
