@@ -18,8 +18,6 @@ target:
 	gcc -o server server.o io_lib.o
 
 
-	./server 8000
-
 clean:
 	rm -f server
 	rm -f client

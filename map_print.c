@@ -59,4 +59,6 @@ void map_print(const int map_size,
 		map_print_VRT(map_size, vertical_map, player_map, i);
 	}
 	map_print_HRZ(map_size, horizontal_map, map_size - 1);
+
+	please_print("\n\n\n");
 }

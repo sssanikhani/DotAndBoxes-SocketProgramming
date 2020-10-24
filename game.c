@@ -11,7 +11,6 @@
 #include "consts.h"
 #include "fill_negative.h"
 #include "map_complete_check.h"
-#include "coordinate_check.h"
 #include "get_score.h"
 #include "map_fill.h"
 #include "map_print.h"
@@ -19,7 +18,99 @@
 #include "io_lib.h"
 
 
+void timed_read_check(int fd, fd_set *readfds, struct timeval *tv, int *signal) {
 
+	FD_ZERO(readfds);
+	FD_SET(fd, readfds);
+	tv -> tv_sec = USER_TURN_TIME;
+	tv -> tv_usec = 0;
+	int activity = select(fd + 1, readfds, NULL, NULL, tv);
+	if(activity == 0)
+		*signal = 1;
+
+}
+
+
+void get_user_coordinates(fd_set *readfds, struct timeval *tv, 
+							int *signal, int *direction, int *row, int *column) {
+
+	set_color(RESET);
+	please_print("Please enter coordinates:\n");
+
+	timed_read_check(STDIN_FILENO, readfds, tv, signal);
+
+	
+	if (FD_ISSET(STDIN_FILENO, readfds)) {
+		
+		please_scan("%d %d %d", direction, row, column);
+
+	}
+
+}
+
+
+int broadcast_coordinates(int udp_sock, struct sockaddr_in *broadcast_addr, 
+								int id, int direction, int row, int column) {
+
+	char buffer[BUFF_SIZE];
+
+	sprintf(buffer, "%d/(%d,%d,%d)", id, direction, row, column);
+	if(sendto(udp_sock, buffer, strlen(buffer), 0, 
+			(struct sockaddr *) broadcast_addr, sizeof(*broadcast_addr)) < 0) {
+
+		set_color(RED);
+		please_print("Error: Couldn't send coordinates\n");
+		return -1;
+
+	}
+	recv(udp_sock, buffer, sizeof(buffer), 0);
+
+	return 0;
+
+}
+
+
+
+int receive_coordinates(int udp_sock, int turn, fd_set *readfds, struct timeval *tv, 
+									int *signal, int *direction, int *row, int *column) {
+
+	char buffer[BUFF_SIZE];
+	int msg_turn;
+
+	set_color(RESET);
+	please_print("Waiting for player %d...\n", turn);
+
+	timed_read_check(udp_sock, readfds, tv, signal);
+
+	if(FD_ISSET(udp_sock, readfds)) {
+
+		int msg_len = recv(udp_sock, buffer, sizeof(buffer), 0);
+		buffer[msg_len] = '\0';
+		sscanf(buffer, "%d/(%d,%d,%d)", &msg_turn, direction, row, column);
+
+		if (msg_turn != turn) {
+
+			set_color(RED);
+			please_print("Error: A mismatch occured\n");
+			return -1;
+
+		}
+
+		set_color(GREEN);
+		please_print("Player %d did his turn: %d %d %d\n", turn, *direction, *row, *column);
+
+		
+	}
+	else {
+
+		set_color(RED);
+		please_print("User %d turn time finished!\n", turn);
+
+	}
+
+	return 0;
+
+}
 
 
 int next_turn(int pre_turn, int gp_size) {
@@ -62,39 +153,23 @@ int start_game(const int map_size, int id, int udp_sock, struct sockaddr_in *bro
 		set_color(YELLOW);
 		please_print("Turn: Player %d\n", turn);
 		if (turn == id) {
-			
-			set_color(RESET);
-			please_print("Please enter coordinates:\n");
 
-			FD_ZERO(&readfds);
-			FD_SET(STDIN_FILENO, &readfds);
-			tv.tv_sec = USER_TURN_TIME;
-			tv.tv_usec = 0;
-			activity = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv);
-			if(activity == 0)
-				signal = 1;
-
-			
-			if (FD_ISSET(STDIN_FILENO, &readfds)) {
-				
-				please_scan("%d %d %d", &direction, &row, &column);
-
-			}
+			get_user_coordinates(&readfds, &tv, &signal, &direction, &row, &column);
 			
 			if(signal == 0) {
-				sprintf(buffer, "%d/(%d,%d,%d)", id, direction, row, column);
-				if(sendto(udp_sock, buffer, strlen(buffer), 0, 
-						(struct sockaddr *) broadcast_addr, sizeof(*broadcast_addr)) < 0) {
+				
+				if(broadcast_coordinates(udp_sock, broadcast_addr, 
+											id, direction, row, column) < 0) {
 
-							set_color(RED);
-							please_print("Error: Couldn't send coordinates\n");
-							return -1;
-
+					set_color(RED);
+					please_print("Error: Couldn't send data\n");
+					return -1;
+				
 				}
-				recv(udp_sock, buffer, sizeof(buffer), 0);
 				
 				set_color(GREEN);
 				please_print("Coordinates sent successfully!\n");
+			
 			}
 			else {
 
@@ -106,42 +181,14 @@ int start_game(const int map_size, int id, int udp_sock, struct sockaddr_in *bro
 		}
 		else {
 
-			int msg_turn;
-			set_color(RESET);
-			please_print("Waiting for player %d...\n", turn);
-
-			FD_ZERO(&readfds);
-			FD_SET(udp_sock, &readfds);
-			tv.tv_sec = USER_TURN_TIME;
-			tv.tv_usec = 0;
-			activity = select(udp_sock + 1, &readfds, NULL, NULL, &tv);
-			if(activity == 0)
-				signal = 1;
-
-
-			if(FD_ISSET(udp_sock, &readfds)) {
-
-				int msg_len = recv(udp_sock, buffer, sizeof(buffer), 0);
-				buffer[msg_len] = '\0';
-				sscanf(buffer, "%d/(%d,%d,%d)", &msg_turn, &direction, &row, &column);
-
-				if (msg_turn != turn) {
-
-					set_color(RED);
-					please_print("Error: A mismatch occured\n");
-					return -1;
-
-				}
-
-				
-			}
-			else {
+			if(receive_coordinates(udp_sock, turn, &readfds, &tv, 
+										&signal, &direction, &row, &column) < 0) {
 
 				set_color(RED);
-				please_print("User %d turn time finished!\n", turn);
+				please_print("Error: Couldn't receive data\n");
+				return -1;
 
 			}
-			
 
 		}
 
