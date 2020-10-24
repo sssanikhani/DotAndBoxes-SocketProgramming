@@ -1,1 +1,0 @@
-void map_print_VRT(int vertical_map[VALUE - 1][VALUE], int player_map[VALUE - 1][VALUE - 1], int row);

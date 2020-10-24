@@ -1,0 +1,1 @@
+void results_announcement(const int map_size, int scores[map_size - MAPSIZE_DIFF_GPSIZE]);

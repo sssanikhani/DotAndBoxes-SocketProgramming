@@ -7,72 +7,9 @@
 #include <unistd.h> 
 #include <arpa/inet.h>
 
-#define BUFF_SIZE 1024
-
-#define RESET 0
-#define BLUE 1
-#define RED 2
-#define GREEN 3
-#define YELLOW 4
-
-void please_scan(char *format, ...) {
-
-    va_list ap;
-    va_start(ap, format);
-
-    char buff[BUFF_SIZE];
-    read(STDIN_FILENO, buff, sizeof(buff));
-    vsscanf(buff, format, ap);
-
-    va_end(ap);
-
-}
-
-void please_print(char *format, ...) {
-    
-    va_list ap;
-    
-    va_start(ap, format);
-
-    char buff[BUFF_SIZE];
-    vsprintf(buff, format, ap);
-    write(STDOUT_FILENO, buff, strlen(buff));
-
-    va_end(ap);
-
-}
-
-
-void set_color(int color) {
-
-    switch (color)
-    {
-    case RESET:
-        please_print("\033[0m");
-        break;
-
-    case BLUE:
-        please_print("\033[1;34m");
-        break;
-
-    case RED:
-        please_print("\033[1;31m");
-        break;
-
-    case GREEN:
-        please_print("\033[1;32m");
-        break;
-
-    case YELLOW:
-        please_print("\033[01;33m");
-        break;
-    
-    default:
-        please_print("\033[0m");
-        break;
-    }
-
-}
+#include "consts.h"
+#include "io_lib.h"
+#include "game.h"
 
 
 int connect_to_server(struct sockaddr_in *serv_addr, int tcp_port) {
@@ -161,7 +98,7 @@ int request_group_from_server(int tcp_sock, int *id, int *group_port) {
     if (send(tcp_sock, gp_size_str, strlen(gp_size_str), 0) < 0) {
 
         set_color(RED);
-        printf("Err: Couldn't send data to server\n");
+        please_print("Error: Couldn't send data to server\n");
         return -1;
 
     }
@@ -172,7 +109,7 @@ int request_group_from_server(int tcp_sock, int *id, int *group_port) {
     if (get_id_and_port_from_server( tcp_sock, id, group_port ) < 0) {
 
         set_color(RED);
-        please_print("Err: Couldn't get id and port from server\n");
+        please_print("Error: Couldn't get id and port from server\n");
         return -1;
 
     }
@@ -260,7 +197,7 @@ int main(int argc, char *argv[])
     if (gp_size < 0) {
 
         set_color(RED);
-        please_print("Err: Couldn't connect to server\n");
+        please_print("Error: Couldn't connect to server\n");
         return -1;
 
     }
@@ -269,25 +206,31 @@ int main(int argc, char *argv[])
     if (gp_size < 0) {
 
         set_color(RED);
-        please_print("Err: Couldn't get group information from server\n");
+        please_print("Error: Couldn't get group information from server\n");
         return -1;
 
     }
 
-    sleep(gp_size - id - 1);
+    sleep(4);
 
     udp_sock = create_broadcast_socket(&bind_addr, &broadcast_addr, 
                                         group_port, &broadcast, &reuse);
     if (udp_sock < 0) {
 
         set_color(RED);
-        please_print("Err: Couldn't create UDP socket\n");
+        please_print("Error: Couldn't create UDP socket\n");
         return -1;
 
     }
     
 
-    start_game(gp_size + 1, id, udp_sock, &broadcast_addr);
+    if(start_game(gp_size + MAPSIZE_DIFF_GPSIZE, id, udp_sock, &broadcast_addr) < 0) {
+
+        set_color(RED);
+        please_print("Error: Couldn't start game\n");
+        return -1;
+
+    }
 
     // if(id == 0) {
 

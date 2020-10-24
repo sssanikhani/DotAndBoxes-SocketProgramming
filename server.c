@@ -4,68 +4,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h> 
+#include <unistd.h>
 
-#define TRUE 1
-#define FALSE 0
-#define MAX_USRS 30
-#define FIRST_PORT 1024
-#define BUFF_SIZE 1024
-#define BACKLOG 5
-#define MAX_GROUP_SIZE 4
-#define MIN_GROUP_SIZE 2
-#define NUM_GROUP_VARIETY 3
+#include "consts.h"
+#include "io_lib.h"
 
-#define RESET 0
-#define BLUE 1
-#define RED 2
-#define GREEN 3
-#define YELLOW 4
-
-
-void please_print(char *format, ...) {
-    va_list ap;
-    
-    va_start(ap, format);
-
-    char str[BUFF_SIZE];
-    vsprintf(str, format, ap);
-    write(STDOUT_FILENO, str, strlen(str));
-
-    va_end(ap);
-
-}
-
-void set_color(int color) {
-
-    switch (color)
-    {
-    case RESET:
-        please_print("\033[0m");
-        break;
-
-    case BLUE:
-        please_print("\033[1;34m");
-        break;
-
-    case RED:
-        please_print("\033[1;31m");
-        break;
-
-    case GREEN:
-        please_print("\033[1;32m");
-        break;
-
-    case YELLOW:
-        please_print("\033[01;33m");
-        break;
-    
-    default:
-        please_print("\033[0m");
-        break;
-    }
-
-}
 
 
 void init_fds (int listenfd, fd_set *readfds, int *client_sock, int *max_sd) {
@@ -120,7 +63,7 @@ int send_group_port_and_id (int *group, int size, int port, char *sendBuff) {
 
 
 int handle_new_connection (int listenfd, struct sockaddr *serv_addr, 
-                                socklen_t *addrlen, int *client_sock ) {
+                                socklen_t *addrlen, int *client_sock) {
 
     int new_sock;
     if ((new_sock = accept(listenfd, serv_addr, addrlen)) < 0) {
@@ -166,8 +109,6 @@ void check_client_message (int *client_sock, int index, char *buffer,
         close( sd );   
         client_sock[index] = 0;
     }   
-            
-    
     else {   
         
         buffer[valread] = '\0';
@@ -187,9 +128,11 @@ void check_client_message (int *client_sock, int index, char *buffer,
             please_print("Group with size %d completed\n", requested_size);
             set_color(RESET);
             please_print("Sending id's and group port to users...\n");
-            last [group_index] = 0;
+            
             send_group_port_and_id ( groups[ group_index ], 
                                     requested_size, (*last_port)++, buffer);
+
+            last [group_index] = 0;
         
         }
 
@@ -275,7 +218,7 @@ int main(int argc, char *argv[]) {
             if (new_sock < 0) {
 
                 set_color(RED);
-                please_print("Err: Couldn't connect to client\n");
+                please_print("Error: Couldn't connect to client\n");
                 return -1;
 
             }

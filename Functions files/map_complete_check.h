@@ -1,1 +1,0 @@
-int map_complete_check(int horizontal_map[VALUE][VALUE-1], int vertical_map[VALUE-1][VALUE]);
